@@ -217,13 +217,13 @@ func processPlan(explain *Explain, plan *Plan) {
 	}
 }
 
-func writeExplain(writer io.Writer, explain *Explain) {
+func writeExplain(writer io.Writer, explain *Explain, width uint) {
 	fmt.Fprintf(writer, "○ Total Cost: %s\n", humanize.Commaf(explain.TotalCost))
 	fmt.Fprintf(writer, "○ Planning Time: %s\n", durationToString(explain.PlanningTime))
 	fmt.Fprintf(writer, "○ Execution Time: %s\n", durationToString(explain.ExecutionTime))
 	fmt.Fprintf(writer, prefixFormat("┬\n"))
 
-	writePlan(writer, explain, &explain.Plan, "", 0, len(explain.Plan.Plans) == 1)
+	writePlan(writer, explain, &explain.Plan, "", 0, width, len(explain.Plan.Plans) == 1)
 }
 
 func formatDetails(plan *Plan) string {
@@ -283,7 +283,14 @@ func getTerminator(index int, plan *Plan) string {
 	}
 }
 
-func writePlan(writer io.Writer, explain *Explain, plan *Plan, prefix string, depth int, lastChild bool) {
+func wrapString(line string, width uint) string {
+	if width == 0 {
+		return line
+	}
+	return wordwrap.WrapString(line, width)
+}
+
+func writePlan(writer io.Writer, explain *Explain, plan *Plan, prefix string, depth int, width uint, lastChild bool) {
 	currentPrefix := prefix
 
 	var outputFn = func(format string, a ...interface{}) (int, error) {
@@ -307,7 +314,9 @@ func writePlan(writer io.Writer, explain *Explain, plan *Plan, prefix string, de
 
 	currentPrefix = prefix + "│ "
 
-	for _, line := range strings.Split(wordwrap.WrapString(Descriptions[plan.NodeType], 60), "\n") {
+	cols := width - uint(len(currentPrefix))
+
+	for _, line := range strings.Split(wrapString(Descriptions[plan.NodeType], cols), "\n") {
 		outputFn("%v", mutedFormat(line))
 	}
 
@@ -354,17 +363,17 @@ func writePlan(writer io.Writer, explain *Explain, plan *Plan, prefix string, de
 	currentPrefix = prefix
 
 	if len(plan.Output) > 0 {
-		for index, line := range strings.Split(wordwrap.WrapString(strings.Join(plan.Output, " + "), 60), "\n") {
+		for index, line := range strings.Split(wrapString(strings.Join(plan.Output, " + "), cols), "\n") {
 			outputFn(prefixFormat(getTerminator(index, plan)) + outputFormat(line))
 		}
 	}
 
 	for index := range plan.Plans {
-		writePlan(writer, explain, &plan.Plans[index], prefix, depth+1, index == len(plan.Plans)-1)
+		writePlan(writer, explain, &plan.Plans[index], prefix, depth+1, width, index == len(plan.Plans)-1)
 	}
 }
 
-func Visualize(writer io.Writer, reader io.Reader) error {
+func Visualize(writer io.Writer, reader io.Reader, width uint) error {
 	var explain []Explain
 
 	err := json.NewDecoder(reader).Decode(&explain)
@@ -375,7 +384,7 @@ func Visualize(writer io.Writer, reader io.Reader) error {
 
 	for index := range explain {
 		processExplain(&explain[index])
-		writeExplain(writer, &explain[index])
+		writeExplain(writer, &explain[index], width)
 	}
 
 	return nil
